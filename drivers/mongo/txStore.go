@@ -4,14 +4,14 @@ import (
 	"context"
 	"log"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"tw.com.championtek.storage/abstract"
+	"github.com/champ-isaac/dbconnector/abstract"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 type TxStore struct {
-	ctx    mongo.SessionContext
-	sess   mongo.Session
+	ctx    context.Context
+	sess   *mongo.Session
 	driver *Driver
 	db     string
 }

@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 type Driver struct {
@@ -19,7 +19,7 @@ func NewDriver(ctx context.Context, conn string, maxOpenConns, maxIdleConns int,
 	clientOption.SetMaxPoolSize(uint64(maxIdleConns))
 	clientOption.SetMaxConnIdleTime(connMaxIdleTime)
 	clientOption.SetConnectTimeout(connMaxLifeTime)
-	client, err := mongo.Connect(ctx, clientOption)
+	client, err := mongo.Connect(clientOption)
 	if err != nil {
 		return nil, err
 	}
