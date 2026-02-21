@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:18.2
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    env_file:
+      - docker/postgres.env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres.conf:/etc/postgresql/postgresql.conf:ro
+      - ./docker/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "hba_file=/etc/postgresql/pg_hba.conf"]
+  mongodb:
+    image: mongo:8.0.12
+    container_name: mongodb
+#    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27017:27017"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'host.docker.internal:27017'}]}) }" | mongosh --port 27017 --quiet
+      interval: 5s
+      timeout: 30s
+      start_period: 0s
+      retries: 10
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: user
+      MONGO_INITDB_ROOT_PASSWORD: user
+    volumes:
+      - ./docker/init.js:/docker-entrypoint-initdb.d/init.js
+      - mongo_data:/data/db
+      - mongo_config:/data/configdb
+  mongo-ui:
+    image: alexanderczigler/mongo-gui:latest
+    container_name: mongo-ui
+    restart: always
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    ports:
+      - "4321:4321"
+    environment:
+      - MONGO_URL=mongodb://user:user@host.docker.internal:27017/?directConnection=true&serviceSelectionTimeoutMS=2000&appName=mongosh+2.1.1
+volumes:
+  postgres_data:
+  mongo_data:
+  mongo_config:

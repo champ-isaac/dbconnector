@@ -3,8 +3,8 @@ package mongo
 import (
 	"log"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"tw.com.championtek.storage/abstract"
+	"github.com/champ-isaac/dbconnector/abstract"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 type Store struct {
