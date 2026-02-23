@@ -14,9 +14,15 @@ type Driver struct {
 }
 
 func NewDriver(ctx context.Context, conn string, maxOpenConns, maxIdleConns int, connMaxIdleTime, connMaxLifeTime time.Duration) (*Driver, error) {
+	minIdleSize := 1
+	tmpMinIdleSize := maxIdleConns / 10
+	if tmpMinIdleSize > 1 {
+		minIdleSize = tmpMinIdleSize
+	}
 	clientOption := options.Client().ApplyURI(conn)
 	clientOption.SetMaxConnecting(uint64(maxOpenConns))
 	clientOption.SetMaxPoolSize(uint64(maxIdleConns))
+	clientOption.SetMinPoolSize(uint64(minIdleSize))
 	clientOption.SetMaxConnIdleTime(connMaxIdleTime)
 	clientOption.SetConnectTimeout(connMaxLifeTime)
 	client, err := mongo.Connect(clientOption)
