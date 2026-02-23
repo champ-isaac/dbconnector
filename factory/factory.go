@@ -20,39 +20,39 @@ const (
 
 type Config struct {
 	Type            DbType
-	ctx             context.Context
-	conn            string
-	db              string
-	maxOpenConns    int
-	maxIdleConns    int
-	connMaxLifetime time.Duration
-	connMaxIdleTime time.Duration
+	Ctx             context.Context
+	Conn            string
+	Db              string
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+	ConnMaxIdleTime time.Duration
 }
 
 type SqlConfig struct {
-	schema   string
-	db       string
-	username string
-	password string
-	host     string
-	port     int
-	sslMode  bool
+	Schema   string
+	Db       string
+	Username string
+	Password string
+	Host     string
+	Port     int
+	SslMode  bool
 }
 
 func NewStore(config Config) (abstract.Store, error) {
 	switch config.Type {
 	case DbTypeSql:
-		driver, err := sql.NewDriver(config.ctx, config.conn, config.maxOpenConns, config.maxIdleConns, config.connMaxIdleTime, config.connMaxLifetime)
+		driver, err := sql.NewDriver(config.Ctx, config.Conn, config.MaxOpenConns, config.MaxIdleConns, config.ConnMaxIdleTime, config.ConnMaxLifetime)
 		if err != nil {
 			return nil, err
 		}
 		return sql.NewStore(driver), nil
 	case DbTypeMongo:
-		driver, err := mongo.NewDriver(config.ctx, config.conn, config.maxOpenConns, config.maxIdleConns, config.connMaxIdleTime, config.connMaxLifetime)
+		driver, err := mongo.NewDriver(config.Ctx, config.Conn, config.MaxOpenConns, config.MaxIdleConns, config.ConnMaxIdleTime, config.ConnMaxLifetime)
 		if err != nil {
 			return nil, err
 		}
-		return mongo.NewStore(driver, config.db), nil
+		return mongo.NewStore(driver, config.Db), nil
 	default:
 		return nil, fmt.Errorf("unknown db type: %v", config.Type)
 	}
@@ -61,14 +61,14 @@ func NewStore(config Config) (abstract.Store, error) {
 // SqlConnStr fix the issue of password whose strange characters
 func SqlConnStr(sqlConfig SqlConfig) string {
 	u := &url.URL{
-		Scheme: sqlConfig.schema,
-		User:   url.UserPassword(sqlConfig.username, sqlConfig.password),
-		Host:   fmt.Sprintf("%s:%d", sqlConfig.host, sqlConfig.port),
-		Path:   sqlConfig.db,
+		Scheme: sqlConfig.Schema,
+		User:   url.UserPassword(sqlConfig.Username, sqlConfig.Password),
+		Host:   fmt.Sprintf("%s:%d", sqlConfig.Host, sqlConfig.Port),
+		Path:   sqlConfig.Db,
 	}
 	q := u.Query()
 	flag := "disable"
-	if sqlConfig.sslMode {
+	if sqlConfig.SslMode {
 		flag = "require"
 	}
 	q.Set("sslmode", flag)
