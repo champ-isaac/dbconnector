@@ -15,22 +15,31 @@ services:
   mongodb:
     image: mongo:8.0.12
     container_name: mongodb
-#    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    command: ["--replSet", "rs0", "--bind_ip_all", "--keyFile", "/etc/mongo-keyfile"]
     ports:
       - "27017:27017"
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "mongodb:127.0.0.1"  # host machine resolves mongodb to 127.0.0.1
     healthcheck:
-      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'host.docker.internal:27017'}]}) }" | mongosh --port 27017 --quiet
+      test: >
+        echo "try {
+          rs.status()
+        } catch (e) {
+          rs.initiate({
+            _id: 'rs0',
+            members: [{ _id: 0, host: 'mongodb:27017' }]
+          })
+        }" | mongosh -u user -p 'user!@#' --authenticationDatabase admin --quiet
       interval: 5s
       timeout: 30s
       start_period: 0s
       retries: 10
     environment:
-      MONGO_INITDB_ROOT_USERNAME: user
-      MONGO_INITDB_ROOT_PASSWORD: user
+      MONGO_INITDB_ROOT_USERNAME: "user"
+      MONGO_INITDB_ROOT_PASSWORD: "user!@#"
     volumes:
       - ./docker/init.js:/docker-entrypoint-initdb.d/init.js
+      - ./docker/mongo-keyfile:/etc/mongo-keyfile:ro
       - mongo_data:/data/db
       - mongo_config:/data/configdb
   mongo-ui:
@@ -43,7 +52,7 @@ services:
     ports:
       - "4321:4321"
     environment:
-      - MONGO_URL=mongodb://user:user@host.docker.internal:27017/?directConnection=true&serviceSelectionTimeoutMS=2000&appName=mongosh+2.1.1
+      - MONGO_URL=mongodb://user:user%21%40%23@mongodb:27017/?replicaSet=rs0&authSource=admin
 volumes:
   postgres_data:
   mongo_data:

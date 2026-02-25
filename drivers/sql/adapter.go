@@ -19,9 +19,9 @@ var (
 	clauseFormat       = "%s = $%d"
 	whereFormat        = "Where %s"
 	insertFormat       = `INSERT INTO %s (%s) VALUES (%s)`
-	updateFormat       = `UPDATE %s SET %s`
-	deleteFormat       = `DELETE FROM %s`
-	selectFormat       = `SELECT * FROM %s`
+	updateFormat       = `UPDATE %s SET %s `
+	deleteFormat       = `DELETE FROM %s `
+	selectFormat       = `SELECT * FROM %s `
 )
 
 func (s *Store) Create(collection string, data any) error {
@@ -69,8 +69,10 @@ func (s *Store) Delete(collection string, filter any) error {
 }
 
 func (s *Store) ExecWithSql(sql string, args ...any) (any, error) {
-	selectRegex := regexp.MustCompile(`(?!)\bselect\b`)
-	if selectRegex.MatchString(strings.ToLower(sql)) {
+	selectRegex := regexp.MustCompile("(?i)\bselect\b")
+	fetchRegex := regexp.MustCompile("(?i)\bfetch\b")
+
+	if selectRegex.MatchString(strings.ToLower(sql)) || fetchRegex.MatchString(strings.ToLower(sql)) {
 		return s.querySql(sql, args...)
 	}
 	return s.execSql(sql, args...)

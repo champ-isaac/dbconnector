@@ -3,8 +3,11 @@ module github.com/champ-isaac/dbconnector
 go 1.26.0
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.11.2
+	github.com/shopspring/decimal v1.4.0
 	github.com/stretchr/testify v1.11.1
+	go.mongodb.org/mongo-driver v1.17.9
 	go.mongodb.org/mongo-driver/v2 v2.5.0
 )
 

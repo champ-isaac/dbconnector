@@ -1,5 +1,13 @@
 db = db.getSiblingDB('data_privacy');
 
+db.createUser({
+    user: "user",
+    pwd: "user!@#",
+    roles: [
+        { role: "readWrite", db: "data_privacy" }
+    ]
+});
+
 const result = db.accounts.insertMany([
     {first_name:'Isaac',last_name:'Cheng',age:30,amount:1000.5,created_at:new Date(),updated_at:new Date()},
     {first_name:'John',last_name:'Doe',age:40,amount:2500.75,created_at:new Date(),updated_at:new Date()}

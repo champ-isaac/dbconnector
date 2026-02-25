@@ -1,5 +1,6 @@
 # Description
 This package integrate features of postgres and mongo databases. Features include CRUD and transaction.
+~~This package also support load balancing which can connect to database cluster.~~
 
 ## Concerns
 - Handle large volume size of data
