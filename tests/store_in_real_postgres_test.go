@@ -12,12 +12,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
-	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 const (
 	database     = "data_privacy"
 	collection   = "accounts"
+	transformed  = "transformed_accounts"
 	username     = "user"
 	password     = "user!@#"
 	host         = "127.0.0.1"
@@ -25,11 +25,9 @@ const (
 	mongodbPort  = 27017
 
 	//test data
-	first_name_1 = "John"
-	first_name_2 = "Smith"
+	first_name_1 = "Smith"
 
-	last_name_1 = "Doe"
-	last_name_2 = "Black"
+	last_name_1 = "Black"
 )
 
 type AccountOfSql struct {
@@ -48,22 +46,6 @@ type TransformedAccountOfSql struct {
 	RelatedFields string    `json:"related_fields,omitempty"`
 }
 
-type AccountOfMongo struct {
-	Id        bson.ObjectID   `bson:"_id,omitempty"`
-	Firstname string          `bson:"first_name,omitempty"`
-	Lastname  string          `bson:"last_name,omitempty"`
-	Age       int             `bson:"age,omitempty"`
-	Amount    bson.Decimal128 `bson:"amount,omitempty"`
-	CreatedAt time.Time       `bson:"created_at,omitempty"`
-	UpdatedAt time.Time       `bson:"updated_at,omitempty"`
-}
-
-type TransformedAccountOfMongo struct {
-	Id            bson.ObjectID `bson:"_id,omitempty"`
-	AccountId     bson.ObjectID `bson:"account_id,omitempty"`
-	RelatedFields string        `bson:"related_fields,omitempty"`
-}
-
 func TestStore_NewStore_InPostgres(t *testing.T) {
 	store, err := initPostgresStore()
 	assert.NoError(t, err)
@@ -78,8 +60,9 @@ func TestStore_CreateAccount_InPostgres(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, store)
 
-	err = createAccount(store)
+	accountId, err := createAccountInPostgres(store)
 	assert.NoError(t, err)
+	t.Log("created account id: ", accountId.String())
 
 	err = truncateAccountsTable(store)
 	assert.NoError(t, err)
@@ -90,17 +73,17 @@ func TestStore_ReadAccount_InPostgres(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, store)
 
-	err = createAccount(store)
+	accountId, err := createAccountInPostgres(store)
 	assert.NoError(t, err)
+	t.Log("created account id: ", accountId.String())
 
 	filter := map[string]any{
-		"first_name": first_name_1,
-		"last_name":  last_name_1,
+		"id": accountId,
 	}
-	account, err := readAccount(store, collection, filter)
+	account, err := readAccountInPostgres(store, collection, filter)
 	assert.NoError(t, err)
 	assert.NotNil(t, account.Id)
-	t.Log("created account id: ", account.Id.String())
+	assert.Equal(t, accountId.String(), account.Id.String())
 
 	err = truncateAccountsTable(store)
 	assert.NoError(t, err)
@@ -112,21 +95,16 @@ func TestStore_UpdateAccount_InPostgres(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, store)
 
-	err = createAccount(store)
+	accountId, err := createAccountInPostgres(store)
 	assert.NoError(t, err)
 
 	filter := map[string]any{
-		"first_name": first_name_1,
-		"last_name":  last_name_1,
+		"id": accountId,
 	}
-	account, err := readAccount(store, collection, filter)
+	account, err := readAccountInPostgres(store, collection, filter)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, account)
 	t.Log(account)
-
-	filter = map[string]any{
-		"id": account.Id.String(),
-	}
 	t.Logf("created account id: %s, amount: %s ", account.Id.String(), account.Amount.String())
 
 	amount, _ := decimal.NewFromString("12500.75")
@@ -137,7 +115,7 @@ func TestStore_UpdateAccount_InPostgres(t *testing.T) {
 	err = store.Update(collection, filter, data)
 	assert.NoError(t, err)
 
-	account, err = readAccount(store, collection, filter)
+	account, err = readAccountInPostgres(store, collection, filter)
 	assert.NoError(t, err)
 	t.Logf("updated account id: %s, amount: %s ", account.Id.String(), account.Amount.String())
 
@@ -151,69 +129,21 @@ func TestStore_DeleteAccount_InPostgres(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, store)
 
-	err = createAccount(store)
+	accountId, err := createAccountInPostgres(store)
 	assert.NoError(t, err)
 
 	filter := map[string]any{
-		"first_name": first_name_1,
-		"last_name":  last_name_1,
+		"id": accountId,
 	}
-	account, err := readAccount(store, collection, filter)
-	assert.NoError(t, err)
-	assert.NotEmpty(t, account)
-
-	filter = map[string]any{
-		"id": account.Id.String(),
-	}
-	t.Log("created account id: ", account.Id.String())
+	t.Log("created account id: ", accountId.String())
 
 	err = store.Delete(collection, filter)
 	assert.NoError(t, err)
 
-	account, err = readAccount(store, collection, filter)
+	account, err := readAccountInPostgres(store, collection, filter)
 	assert.NoError(t, err)
 	assert.Empty(t, account)
 	t.Log("delete account id is empty: ", account.Id.String())
-}
-
-func TestStore_NewStore_InMongo(t *testing.T) {
-	store, err := initMongoStore()
-	assert.NoError(t, err)
-	assert.NotNil(t, store)
-
-	err = store.Ping()
-	assert.NoError(t, err)
-}
-
-func TestStore_CreateAccount_InMongo(t *testing.T) {
-	store, err := initMongoStore()
-	assert.NoError(t, err)
-	assert.NotNil(t, store)
-
-	accountId := bson.NewObjectID()
-	amount, _ := bson.ParseDecimal128("2500.75")
-	account := AccountOfMongo{
-		Id:        accountId,
-		Firstname: "apple",
-		Lastname:  "seed",
-		Age:       40,
-		Amount:    amount,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-	err = store.Create("accounts", account)
-	assert.NoError(t, err)
-	err = store.Create("transformed_accounts", TransformedAccountOfMongo{
-		AccountId:     accountId,
-		RelatedFields: "masked_email",
-	})
-	assert.NoError(t, err)
-
-	err = store.Create("transformed_accounts", TransformedAccountOfMongo{
-		AccountId:     accountId,
-		RelatedFields: "masked_address",
-	})
-	assert.NoError(t, err)
 }
 
 func initPostgresStore() (abstract.Store, error) {
@@ -235,26 +165,6 @@ func initPostgresStore() (abstract.Store, error) {
 	return factory.NewStore(config)
 }
 
-func initMongoStore() (abstract.Store, error) {
-	config := factory.Config{
-		Type:            factory.DbTypeMongo,
-		Ctx:             context.Background(),
-		Schema:          "mongodb",
-		Db:              database,
-		Username:        username,
-		Password:        password,
-		Host:            host,
-		Port:            mongodbPort,
-		SslMode:         false,
-		ReplicaMaster:   "", // if you're testing on local, keep this empty
-		MaxOpenConns:    10,
-		MaxIdleConns:    5,
-		ConnMaxLifetime: 2 * time.Second,
-		ConnMaxIdleTime: 2 * time.Second,
-	}
-	return factory.NewStore(config)
-}
-
 func structToMap(v any) (map[string]any, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -268,11 +178,11 @@ func structToMap(v any) (map[string]any, error) {
 	return m, nil
 }
 
-func createAccount(store abstract.Store) error {
-	accountIdOfSql := uuid.New()
+func createAccountInPostgres(store abstract.Store) (uuid.UUID, error) {
+	accountId := uuid.New()
 	amount, _ := decimal.NewFromString("2500.75")
 	account := AccountOfSql{
-		Id:        accountIdOfSql,
+		Id:        accountId,
 		Firstname: first_name_1,
 		Lastname:  last_name_1,
 		Age:       40,
@@ -282,44 +192,44 @@ func createAccount(store abstract.Store) error {
 	}
 	m, err := structToMap(account)
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 
-	err = store.Create("accounts", m)
+	err = store.Create(collection, m)
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 
 	tm1, err := structToMap(TransformedAccountOfSql{
 		Id:            uuid.New(),
-		AccountId:     accountIdOfSql,
+		AccountId:     accountId,
 		RelatedFields: "masked_email",
 	})
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 
-	err = store.Create("transformed_accounts", tm1)
+	err = store.Create(transformed, tm1)
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
 
 	tm2, err := structToMap(TransformedAccountOfSql{
 		Id:            uuid.New(),
-		AccountId:     accountIdOfSql,
+		AccountId:     accountId,
 		RelatedFields: "masked_address",
 	})
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
-	err = store.Create("transformed_accounts", tm2)
+	err = store.Create(transformed, tm2)
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
-	return nil
+	return accountId, nil
 }
 
-func readAccount(store abstract.Store, collection string, filter map[string]any) (AccountOfSql, error) {
+func readAccountInPostgres(store abstract.Store, collection string, filter map[string]any) (AccountOfSql, error) {
 	rows, err := store.Read(collection, filter)
 	if err != nil {
 		return AccountOfSql{}, err
