@@ -5,6 +5,17 @@ This package integrate features of postgres and mongo databases. Features includ
 ## Note
 Please check examples in `/tests` to see how to use dbconnector.
 
+## Postgres behaviour
+- Table and column names must be plain names (`accounts` or `public.accounts`), otherwise `ErrInvalidIdentifier` is returned. Values always go through `$n` placeholders.
+- `Update` and `Delete` refuse an empty filter (`ErrEmptyFilter`) so a bug cannot touch every row. Use `ExecWithSql` on purpose for that.
+- `ExecWithSql` returns rows (`[]any` of `map[string]any`) for statements with `select`, `fetch` or `returning`, otherwise the `sql.Result`.
+
+## Tests
+```
+go test -race -cover ./factory ./drivers/sql   # unit tests on go-sqlmock, 100% coverage (Mongo driver is not part of the target)
+docker compose up -d postgres && go test -tags integration -run InPostgres ./tests   # real Postgres
+```
+
 ## Architecture
 ![dbconnector architecture](Privacy%20API%20Service%20Diagram.png)
 

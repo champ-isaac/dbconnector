@@ -35,10 +35,13 @@ type Config struct {
 	ConnMaxIdleTime time.Duration
 }
 
+// newSqlDriver is a variable so tests can replace it, pq never fails before connecting.
+var newSqlDriver = sql.NewDriver
+
 func NewStore(config Config) (abstract.Store, error) {
 	switch config.Type {
 	case DbTypeSql:
-		driver, err := sql.NewDriver(config.Ctx, sqlConnStr(config), config.MaxOpenConns, config.MaxIdleConns, config.ConnMaxIdleTime, config.ConnMaxLifetime)
+		driver, err := newSqlDriver(config.Ctx, sqlConnStr(config), config.MaxOpenConns, config.MaxIdleConns, config.ConnMaxIdleTime, config.ConnMaxLifetime)
 		if err != nil {
 			return nil, err
 		}

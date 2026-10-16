@@ -8,13 +8,16 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// sqlOpen is a variable so tests can replace it, pq does not validate the DSN before connecting.
+var sqlOpen = sql.Open
+
 type Driver struct {
 	Ctx context.Context
 	Db  *sql.DB
 }
 
 func NewDriver(ctx context.Context, conn string, maxOpenConns, maxIdleConns int, connMaxIdleTime, connMaxLifeTime time.Duration) (*Driver, error) {
-	db, err := sql.Open("postgres", conn)
+	db, err := sqlOpen("postgres", conn)
 	if err != nil {
 		return nil, err
 	}
