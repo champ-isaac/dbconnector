@@ -50,6 +50,9 @@ func (s *Store) Read(collection string, filter any) (any, error) {
 }
 
 func (s *Store) Update(collection string, filter any, data any) error {
+	if _, ok := data.(Inc); ok {
+		return ErrIncNeedsTransaction
+	}
 	coll := s.driver.Client.Database(s.database).Collection(collection)
 	update := bson.D{bson.E{Key: "$set", Value: data}}
 	_, err := coll.UpdateMany(s.driver.Ctx, filter, update)
