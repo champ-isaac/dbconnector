@@ -51,7 +51,7 @@ func (s *Store) Read(collection string, filter any) (any, error) {
 
 func (s *Store) Update(collection string, filter any, data any) error {
 	coll := s.driver.Client.Database(s.database).Collection(collection)
-	update := bson.D{{"$set", data}}
+	update := bson.D{bson.E{Key: "$set", Value: data}}
 	_, err := coll.UpdateMany(s.driver.Ctx, filter, update)
 	return err
 }

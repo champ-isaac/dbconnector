@@ -25,7 +25,7 @@ func (s *MockStore) Delete(collection string, filter any) error {
 
 func (s *MockStore) Read(collection string, filter any) (any, error) {
 	args := s.Called(collection, filter)
-	return args.Get(0).(any), args.Error(1)
+	return args.Get(0), args.Error(1)
 }
 
 func (s *MockStore) Ping() error {

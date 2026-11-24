@@ -21,7 +21,7 @@ func (m *MockTxStore) ExecWithSql(sql string, values ...any) (any, error) {
 		return nil, args.Error(0)
 	}
 	if strings.HasPrefix(strings.ToLower(sql), "select") {
-		return args.Get(0).(any), args.Error(1)
+		return args.Get(0), args.Error(1)
 	}
 	return nil, fmt.Errorf("unexpected query: %s", sql)
 }
@@ -33,7 +33,7 @@ func (m *MockTxStore) Create(collection string, data any) error {
 
 func (m *MockTxStore) Read(collection string, filter any) (any, error) {
 	args := m.Called(collection, filter)
-	return args.Get(0).(any), args.Error(1)
+	return args.Get(0), args.Error(1)
 }
 
 func (m *MockTxStore) Update(collection string, filter, data any) error {
