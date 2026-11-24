@@ -23,7 +23,7 @@ func newHarness(t *testing.T, tx bool) harness {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual), sqlmock.MonitorPingsOption(true))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	var s abstract.Store = NewStore(&Driver{Ctx: context.Background(), Db: db})
+	s := NewStore(&Driver{Ctx: context.Background(), Db: db})
 	if tx {
 		mock.ExpectBegin()
 		s, err = s.(abstract.TransactionManager).BeginTransaction(context.Background())
@@ -163,7 +163,7 @@ func TestStore_PingAndDisconnect(t *testing.T) {
 func TestStore_BeginTransactionError(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 	mock.ExpectBegin().WillReturnError(errBoom)
 	_, err = NewStore(&Driver{Ctx: context.Background(), Db: db}).(abstract.TransactionManager).BeginTransaction(context.Background())
 	assert.ErrorIs(t, err, errBoom)

@@ -159,8 +159,10 @@ func TestStore_DeleteAccount_InMongo(t *testing.T) {
 	assert.Empty(t, rows)
 }
 
-func initMongoStore() (abstract.Store, error) {
-	config := factory.Config{
+func initMongoStore() (abstract.Store, error) { return factory.NewStore(mongoConfig()) }
+
+func mongoConfig() factory.Config {
+	return factory.Config{
 		Type:            factory.DbTypeMongo,
 		Ctx:             context.Background(),
 		Schema:          "mongodb",
@@ -176,7 +178,6 @@ func initMongoStore() (abstract.Store, error) {
 		ConnMaxLifetime: 2 * time.Second,
 		ConnMaxIdleTime: 2 * time.Second,
 	}
-	return factory.NewStore(config)
 }
 
 func createAccountInMongo(store abstract.Store) (bson.ObjectID, error) {
