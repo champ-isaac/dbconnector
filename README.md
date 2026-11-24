@@ -136,7 +136,7 @@ cmd, err := factory.NewCommandStore(writeCfg)    // abstract.CommandStore: Creat
 - `Update` sets the given fields with `$set` and sends the filter as it is. It does not check how many documents matched.
 - `mongo.Inc` (package `drivers/mongo`) changes numeric fields by a delta with `$inc` instead of setting them: `mongo.Inc{"balance": -5}` subtracts 5. It must be used inside a transaction (`BeginTransaction`), and the filter must match exactly one document. MongoDB rejects a field that is not numeric.
 - `Store.Update` outside a transaction returns `mongo.ErrIncNeedsTransaction` for an `Inc` and sends nothing.
-- Inside a transaction, `TxStore.Update` returns `mongo.ErrEmptyInc` for an `Inc` with no fields (MongoDB would accept an empty `$inc` and change nothing), and `mongo.ErrNonFiniteInc` when a `float64`, `float32` or `Decimal128` value is NaN or infinite (the error names the first such field in name order). Both are returned before anything is sent.
+- Inside a transaction, `TxStore.Update` returns `mongo.ErrEmptyInc` when the `Inc` has no fields, and `mongo.ErrNonFiniteInc` when a `float64`, `float32` or `Decimal128` value is NaN or infinite. In the first case MongoDB would accept an empty `$inc` and change nothing. In the second case the error names the first such field in name order. Both are returned before anything is sent.
 - Inside a transaction, `TxStore.Update` returns `mongo.ErrNoMatch` when no document matched, and `mongo.ErrMultipleMatch` when more than one matched. In the second case the delta was already applied to every match inside the transaction, so call `Rollback`.
 
 ```go
