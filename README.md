@@ -173,6 +173,8 @@ PG_HOST=127.0.0.1 PG_DB=app PG_USER=u PG_PASSWORD=p go test -tags integration -r
 
 CI runs every package with `-race` and requires 90% total coverage. It also runs the `InMongo` tests against a replica set it starts itself (job `integration-mongo`), the `InPostgres` tests against a PostgreSQL service (job `integration-postgres`), and, in job `integration-postgres-logical`, `TestReplicationConnectInPostgres` and `TestReplicationSlotCreateAndDrop` against a server it starts with `wal_level=logical`.
 
+`TestReplicationSlotCreateAndDrop` needs a server running with `wal_level=logical`: creating a logical slot fails on the default `wal_level=replica`. The MongoDB query side has no server-side read-only enforcement, because MongoDB has no per-connection read-only switch, so only the `QueryStore` type keeps it from writing. Give its `Config` a read-only user or a secondary if the server must enforce it.
+
 `go.mod` is vendored locally (`vendor/` is not committed). Run `go mod vendor` after changing dependencies.
 
 ## Concerns
