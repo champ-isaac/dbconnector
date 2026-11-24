@@ -1,0 +1,280 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  COVERAGE_THRESHOLD: "90"
+
+jobs:
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l $(git ls-files '*.go' | grep -v '^vendor/'))
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: go mod tidy check
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+      - name: go vet
+        run: go vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.15.0
+      # Compile and lint the files behind the integration build tag
+      # (tests/). This step starts no servers and runs no tests. The
+      # integration-mongo job runs the InMongo tests, and the
+      # integration-postgres job runs the InPostgres tests.
+      - name: go vet (integration tag)
+        run: go vet -tags integration ./...
+      - name: golangci-lint (integration tag)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.15.0
+          args: --build-tags integration
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -exclude-generated ./...
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  test:
+    name: Unit Tests & Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Run tests with race detector
+        run: go test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage.out ./...
+      - name: Enforce coverage threshold
+        run: |
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%","",$3); print $3}')
+          echo "Total coverage: ${total}% (required: ${COVERAGE_THRESHOLD}%)"
+          awk -v t="$total" -v min="$COVERAGE_THRESHOLD" 'BEGIN { exit (t+0 >= min+0) ? 0 : 1 }' \
+            || { echo "::error::Coverage ${total}% is below ${COVERAGE_THRESHOLD}%"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage.out
+
+  integration-mongo:
+    name: Integration Tests (MongoDB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # The mongodb service of docker-compose.yaml: same image, root user, init.js seed,
+      # authentication and a one-node replica set (transactions need one). It is started
+      # with docker run because `services:` cannot pass --replSet or --keyFile. The key file
+      # is made inside the container: the one in the repo belongs to the runner user, which
+      # mongod cannot read on Linux. Keep the image in step with docker-compose.yaml.
+      # The tests connect to 127.0.0.1:27017 as user / database data_privacy (constants in
+      # tests/store_in_real_postgres_test.go), so no environment variable is needed.
+      - name: Start MongoDB replica set
+        run: |
+          docker run -d --name mongodb -p 127.0.0.1:27017:27017 \
+            -e MONGO_INITDB_ROOT_USERNAME=user \
+            -e 'MONGO_INITDB_ROOT_PASSWORD=user!@#' \
+            -v "$PWD/docker/init.js:/docker-entrypoint-initdb.d/init.js:ro" \
+            --entrypoint bash mongo:8.0.12 -c '
+              head -c 600 /dev/urandom | base64 > /tmp/mongo-keyfile &&
+              chmod 400 /tmp/mongo-keyfile && chown mongodb:mongodb /tmp/mongo-keyfile &&
+              exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --keyFile /tmp/mongo-keyfile'
+          mongosh() { docker exec mongodb mongosh -u user -p 'user!@#' --authenticationDatabase admin --quiet --eval "$1"; }
+          # init.js first runs on a temporary server without the replica set, where this fails; retry
+          for i in $(seq 1 90); do
+            [ "$(mongosh 'try { rs.status().ok } catch (e) { rs.initiate({_id: "rs0", members: [{_id: 0, host: "127.0.0.1:27017"}]}).ok }' 2>/dev/null)" = "1" ] && break
+            sleep 2
+          done
+          for i in $(seq 1 60); do
+            [ "$(mongosh 'db.hello().isWritablePrimary' 2>/dev/null)" = "true" ] && exit 0
+            sleep 1
+          done
+          echo "::error::MongoDB did not become primary"
+          docker logs mongodb
+          exit 1
+      - name: Run MongoDB integration tests
+        run: go test -race -count=1 -tags integration -run InMongo -v ./tests
+      - name: MongoDB logs
+        if: failure()
+        run: docker logs mongodb
+      - name: Stop MongoDB
+        if: always()
+        run: docker rm -f mongodb
+
+  integration-postgres:
+    name: Integration Tests (PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The postgres service of docker-compose.yaml (same image, user and database), without its
+    # custom postgres.conf and pg_hba.conf: these tests need neither. The tests connect to
+    # 127.0.0.1:5432 as user / data_privacy (constants in tests/store_in_real_postgres_test.go).
+    # Only the replication test reads environment variables (PG_*, set on the test step). It
+    # runs IDENTIFY_SYSTEM on a replication=database connection, which a server with the
+    # default wal_level=replica accepts, so the service needs no wal_level=logical.
+    # Keep the image in step with docker-compose.yaml.
+    # The health check connects over TCP: during first start the image runs a temporary server
+    # that listens on a unix socket only, and a socket check would report ready too early.
+    services:
+      postgres:
+        image: postgres:18.2
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: "user!@#"
+          POSTGRES_DB: data_privacy
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U user -d data_privacy"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Wait for PostgreSQL to be healthy
+        run: |
+          cid=$(docker ps -q --filter ancestor=postgres:18.2)
+          [ "$(echo "$cid" | wc -w)" -eq 1 ] || { echo "::error::expected one postgres:18.2 container, found: '$cid'"; exit 1; }
+          for i in $(seq 1 60); do
+            [ "$(docker inspect --format '{{.State.Health.Status}}' "$cid")" = healthy ] && { echo "PG_CID=$cid" >> "$GITHUB_ENV"; exit 0; }
+            sleep 2
+          done
+          echo "::error::PostgreSQL did not become healthy"
+          docker logs "$cid"
+          exit 1
+      # The service cannot mount files from the repository (it starts before checkout), so the
+      # schema is loaded here. The tests need the accounts table.
+      - name: Create schema
+        run: docker exec -i -e PGPASSWORD='user!@#' "$PG_CID" psql -h 127.0.0.1 -U user -d data_privacy -v ON_ERROR_STOP=1 < docker/init.sql
+      # Runs every test with InPostgres in its name: the five in
+      # tests/store_in_real_postgres_test.go, TestQueryConnString_RefusesWrites_InPostgres and
+      # TestReplicationConnectInPostgres. Tests skip themselves when nothing listens on the
+      # port, or (replication) when PG_HOST is unset, and a skip would leave this step green.
+      # So the step lists the matching tests and requires a PASS line for each of them.
+      - name: Run PostgreSQL integration tests
+        env:
+          PG_HOST: 127.0.0.1
+          PG_PORT: "5432"
+          PG_DB: data_privacy
+          PG_USER: user
+          PG_PASSWORD: "user!@#"
+        run: |
+          set -o pipefail
+          go test -tags integration -list InPostgres ./tests | { grep '^Test' || true; } > "$RUNNER_TEMP/pg-want.txt"
+          [ -s "$RUNNER_TEMP/pg-want.txt" ] || { echo "::error::no InPostgres tests found"; exit 1; }
+          go test -race -count=1 -tags integration -run InPostgres -v ./tests | tee "$RUNNER_TEMP/pg-test.out"
+          while read -r t; do
+            grep -q -- "--- PASS: $t (" "$RUNNER_TEMP/pg-test.out" || { echo "::error::$t did not pass (failed, skipped or not run)"; exit 1; }
+          done < "$RUNNER_TEMP/pg-want.txt"
+      - name: PostgreSQL logs
+        if: failure()
+        run: docker logs "$PG_CID"
+
+  integration-postgres-logical:
+    name: Integration Tests (PostgreSQL, wal_level=logical)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The PG_* variables are read by TestReplicationConnectInPostgres and also build the
+    # container and the slot connection below, so the three cannot drift apart.
+    env:
+      PG_HOST: 127.0.0.1
+      PG_PORT: "5432"
+      PG_DB: data_privacy
+      PG_USER: user
+      PG_PASSWORD: "user!@#"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # Started with docker run because `services:` cannot pass server arguments. The first
+      # start runs a temporary server on a unix socket only, so readiness is checked over
+      # TCP. The loop also requires wal_level=logical, so a server without it fails here.
+      - name: Start PostgreSQL with wal_level=logical
+        run: |
+          docker run -d --name pg-logical -p "127.0.0.1:${PG_PORT}:5432" \
+            -e POSTGRES_USER="$PG_USER" -e POSTGRES_PASSWORD="$PG_PASSWORD" -e POSTGRES_DB="$PG_DB" \
+            postgres:18.2 postgres -c wal_level=logical
+          for i in $(seq 1 60); do
+            [ "$(docker exec -e PGPASSWORD="$PG_PASSWORD" pg-logical psql -h 127.0.0.1 -U "$PG_USER" -d "$PG_DB" -tAc 'show wal_level' 2>/dev/null)" = logical ] && exit 0
+            sleep 2
+          done
+          echo "::error::PostgreSQL did not come up with wal_level=logical"
+          docker logs pg-logical
+          exit 1
+      # A replication=database connection takes replication commands. Creating a logical slot
+      # is what needs wal_level=logical. The second command checks that the slot exists.
+      - name: Create logical replication slot
+        run: |
+          docker exec -e PGPASSWORD="$PG_PASSWORD" pg-logical \
+            psql "host=127.0.0.1 dbname=$PG_DB user=$PG_USER replication=database" \
+            -tAc 'CREATE_REPLICATION_SLOT dbconnector_ci LOGICAL pgoutput'
+          docker exec -e PGPASSWORD="$PG_PASSWORD" pg-logical \
+            psql -h 127.0.0.1 -U "$PG_USER" -d "$PG_DB" -tAc "select slot_name || ' ' || plugin || ' ' || slot_type from pg_replication_slots" \
+            | grep -qx 'dbconnector_ci pgoutput logical'
+      # The test skips itself when PG_HOST is unset, which would leave this step green
+      # without running it. So the step also requires the PASS line.
+      - name: Run replication test
+        run: |
+          set -o pipefail
+          go test -race -count=1 -tags integration -run '^TestReplicationConnectInPostgres$' -v ./tests | tee "$RUNNER_TEMP/repl-test.out"
+          grep -q -- '--- PASS: TestReplicationConnectInPostgres (' "$RUNNER_TEMP/repl-test.out"
+      # Creates and drops its own slot (dbconnector_test_*) through pglogrepl, apart from the
+      # dbconnector_ci slot made above. Besides the PASS line, the step checks the server and
+      # requires that the test left none of its slots behind.
+      - name: Run replication slot test
+        run: |
+          set -o pipefail
+          go test -race -count=1 -tags integration -run '^TestReplicationSlotCreateAndDrop$' -v ./tests | tee "$RUNNER_TEMP/slot-test.out"
+          grep -q -- '--- PASS: TestReplicationSlotCreateAndDrop (' "$RUNNER_TEMP/slot-test.out"
+          left=$(docker exec -e PGPASSWORD="$PG_PASSWORD" pg-logical psql -h 127.0.0.1 -U "$PG_USER" -d "$PG_DB" -tAc "select count(*) from pg_replication_slots where slot_name like 'dbconnector_test_%'")
+          [ "$left" = 0 ] || { echo "::error::$left test slot(s) left on the server"; exit 1; }
+      - name: PostgreSQL logs
+        if: failure()
+        run: docker logs pg-logical
+      - name: Stop PostgreSQL
+        if: always()
+        run: docker rm -f pg-logical
