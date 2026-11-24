@@ -266,6 +266,7 @@ jobs:
       # dbconnector_ci slot made above. Besides the PASS line, the step checks the server and
       # requires that the test left none of its slots behind.
       - name: Run replication slot test
+        if: ${{ !cancelled() }}
         run: |
           set -o pipefail
           go test -race -count=1 -tags integration -run '^TestReplicationSlotCreateAndDrop$' -v ./tests | tee "$RUNNER_TEMP/slot-test.out"
