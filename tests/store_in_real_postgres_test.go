@@ -148,8 +148,10 @@ func TestStore_DeleteAccount_InPostgres(t *testing.T) {
 	t.Log("delete account id is empty: ", account.Id.String())
 }
 
-func initPostgresStore() (abstract.Store, error) {
-	config := factory.Config{
+func initPostgresStore() (abstract.Store, error) { return factory.NewStore(postgresConfig()) }
+
+func postgresConfig() factory.Config {
+	return factory.Config{
 		Type:            factory.DbTypeSql,
 		Ctx:             context.Background(),
 		Schema:          "postgres",
@@ -164,7 +166,6 @@ func initPostgresStore() (abstract.Store, error) {
 		ConnMaxIdleTime: 2 * time.Second,
 		ConnMaxLifetime: 2 * time.Second,
 	}
-	return factory.NewStore(config)
 }
 
 func structToMap(v any) (map[string]any, error) {

@@ -3,7 +3,10 @@ package factory
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/champ-isaac/dbconnector/abstract"
@@ -38,10 +41,18 @@ type Config struct {
 // newSqlDriver is a variable so tests can replace it, pq never fails before connecting.
 var newSqlDriver = sql.NewDriver
 
-func NewStore(config Config) (abstract.Store, error) {
+func NewStore(config Config) (abstract.Store, error) { return newStore(config, false) }
+
+// newStore builds the store. readOnly is for the query side: a PostgreSQL connection then
+// refuses writes (see QueryConnString).
+func newStore(config Config, readOnly bool) (abstract.Store, error) {
 	switch config.Type {
 	case DbTypeSql:
-		driver, err := newSqlDriver(config.Ctx, sqlConnStr(config), config.MaxOpenConns, config.MaxIdleConns, config.ConnMaxIdleTime, config.ConnMaxLifetime)
+		dsn := ConnString(config)
+		if readOnly {
+			dsn = QueryConnString(config)
+		}
+		driver, err := newSqlDriver(config.Ctx, dsn, config.MaxOpenConns, config.MaxIdleConns, config.ConnMaxIdleTime, config.ConnMaxLifetime)
 		if err != nil {
 			return nil, err
 		}
@@ -64,12 +75,14 @@ func NewStore(config Config) (abstract.Store, error) {
 	}
 }
 
-// SqlConnStr fix the issue of password whose strange characters
-func sqlConnStr(cfg Config) string {
+// ConnURL is the connection URL for a PostgreSQL Config. The password is
+// percent-encoded, so strange characters in it are safe. It contains the
+// password: do not log it.
+func ConnURL(cfg Config) *url.URL {
 	u := &url.URL{
 		Scheme: cfg.Schema,
 		User:   url.UserPassword(cfg.Username, cfg.Password),
-		Host:   fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+		Host:   net.JoinHostPort(strings.Trim(cfg.Host, "[]"), strconv.Itoa(cfg.Port)), // brackets an IPv6 host
 		Path:   cfg.Db,
 	}
 	q := u.Query()
@@ -79,6 +92,20 @@ func sqlConnStr(cfg Config) string {
 	}
 	q.Set("sslmode", flag)
 	u.RawQuery = q.Encode()
+	return u
+}
 
+// ConnString is ConnURL as text. It contains the password: do not log it.
+func ConnString(cfg Config) string { return ConnURL(cfg).String() }
+
+// QueryConnString is ConnString for a connection that only queries: it starts read-only
+// (default_transaction_read_only=on), so PostgreSQL refuses a plain write. That stops
+// accidents only: a session can still ask for BEGIN READ WRITE. Use a read-only role or a
+// standby to enforce it. It contains the password: do not log it.
+func QueryConnString(cfg Config) string {
+	u := ConnURL(cfg)
+	q := u.Query()
+	q.Set("default_transaction_read_only", "on")
+	u.RawQuery = q.Encode()
 	return u.String()
 }

@@ -2,16 +2,15 @@ package abstract
 
 import "context"
 
+// Store has both sides (see Reader and Writer) and raw SQL, which is a query and a
+// command at once and so belongs to neither side.
 type Store interface {
-	Create(collection string, data any) error
-	Read(collection string, filter any) (any, error)
-	Update(collection string, filter any, data any) error
-	Delete(collection string, filter any) error
+	Reader
+	Writer
 
 	ExecWithSql(sql string, args ...any) (any, error)
 
 	Disconnect() error
-	Ping() error
 }
 
 type TransactionManager interface {
