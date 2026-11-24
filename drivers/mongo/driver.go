@@ -2,6 +2,7 @@ package mongo
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -21,6 +22,23 @@ type DriverConfig struct {
 	ReplicaMaster string
 }
 
+// maxPoolSize caps a pool size far above any real setting, so a bad value
+// cannot turn into a huge uint64.
+const maxPoolSize = math.MaxInt32
+
+// poolSize converts a pool size to the uint64 the driver takes. A negative
+// value becomes 0 (the driver's own default) and a value above maxPoolSize is
+// capped, so the conversion below can never overflow.
+func poolSize(n int) uint64 {
+	if n < 0 {
+		return 0
+	}
+	if n > maxPoolSize {
+		return maxPoolSize
+	}
+	return uint64(n)
+}
+
 func NewDriver(ctx context.Context, cfg DriverConfig, maxOpenConns, maxIdleConns int, connMaxIdleTime, connMaxLifeTime time.Duration) (*Driver, error) {
 	minIdleSize := 1
 	tmpMinIdleSize := maxIdleConns / 10
@@ -28,8 +46,8 @@ func NewDriver(ctx context.Context, cfg DriverConfig, maxOpenConns, maxIdleConns
 		minIdleSize = tmpMinIdleSize
 	}
 	clientOption := options.Client().ApplyURI(cfg.Conn)
-	clientOption.SetMaxConnecting(uint64(maxOpenConns))
-	clientOption.SetMaxPoolSize(uint64(maxIdleConns))
+	clientOption.SetMaxConnecting(poolSize(maxOpenConns))
+	clientOption.SetMaxPoolSize(poolSize(maxIdleConns))
 	clientOption.SetMinPoolSize(uint64(minIdleSize))
 	clientOption.SetMaxConnIdleTime(connMaxIdleTime)
 	clientOption.SetConnectTimeout(connMaxLifeTime)
