@@ -69,12 +69,13 @@ func scanRows(rows rowScanner) (any, error) {
 		return nil, err
 	}
 	var results []any
+	// Allocated once: each row's values are copied into its own map below, and Scan overwrites every cell.
+	columnData := make([]any, len(columns))
+	columnPointer := make([]any, len(columns))
+	for j := range columnData {
+		columnPointer[j] = &columnData[j]
+	}
 	for rows.Next() {
-		columnData := make([]any, len(columns))
-		columnPointer := make([]any, len(columns))
-		for j := range columnData {
-			columnPointer[j] = &columnData[j]
-		}
 		if err = rows.Scan(columnPointer...); err != nil {
 			return nil, err
 		}
