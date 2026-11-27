@@ -279,3 +279,40 @@ jobs:
       - name: Stop PostgreSQL
         if: always()
         run: docker rm -f pg-logical
+
+  verify:
+    name: Verify (real PostgreSQL + MongoDB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Runs the verify-dbconnector skill end to end: `verify.sh all` starts the postgres and
+    # mongodb services of docker-compose.yaml (project dbconnector-verify, postgres with
+    # wal_level=logical), runs the unit tests, an outside caller program against both
+    # databases and the integration suite, then checks the stored data with psql and mongosh.
+    # The job fails if verify.sh exits non-zero. It needs the .claude/skills/verify-dbconnector
+    # folder to be committed.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # KEEP=1 skips verify.sh's own teardown, so the container logs are still there when the
+      # run fails. The Stop step below does the teardown. The exit code is still verify.sh's.
+      - name: Run verify.sh all
+        env:
+          KEEP: "1"
+        run: .claude/skills/verify-dbconnector/verify.sh all
+      - name: Container logs
+        if: failure()
+        run: |
+          docker logs dbconnector-verify-postgres || true
+          docker logs dbconnector-verify-mongodb || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-evidence
+          path: .claude/skills/verify-dbconnector/evidence
+          include-hidden-files: true # the path is under .claude/, which upload-artifact skips by default
+          if-no-files-found: ignore
+      - name: Stop the stack
+        if: always()
+        run: .claude/skills/verify-dbconnector/verify.sh down

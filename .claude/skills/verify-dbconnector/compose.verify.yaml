@@ -1,0 +1,31 @@
+# Override for ../../../docker-compose.yaml, used only by verify.sh (project name dbconnector-verify).
+# - own container names + own named volumes (project name), so the user's old `postgres` /
+#   `mongodb` containers and `dbconnector_*` volumes are never touched
+# - ports bound to 127.0.0.1 only (the compose file publishes them on every interface
+#   with a weak password)
+# - postgres runs with wal_level=logical so the replication slot test can run too
+#   (docker-compose.yaml leaves the default wal_level=replica)
+# - mongod gets a private copy of docker/mongo-keyfile made inside the container (owner
+#   mongodb, mode 400). Git stores the file as mode 644, so on Linux the bind mount is world
+#   readable and mongod refuses it ("permissions ... are too open"). Docker Desktop / Colima
+#   mounts hide the problem. The entrypoint is docker-compose.yaml's own mongod command with
+#   --keyFile pointed at the copy; keep it in step with the mongodb service there.
+services:
+  postgres:
+    container_name: dbconnector-verify-postgres
+    ports: !override
+      - "127.0.0.1:5432:5432"
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "hba_file=/etc/postgresql/pg_hba.conf", "-c", "wal_level=logical"]
+  mongodb:
+    container_name: dbconnector-verify-mongodb
+    ports: !override
+      - "127.0.0.1:27017:27017"
+    entrypoint:
+      - bash
+      - -c
+      - >-
+        cp /etc/mongo-keyfile /tmp/mongo-keyfile &&
+        chmod 400 /tmp/mongo-keyfile &&
+        chown mongodb:mongodb /tmp/mongo-keyfile &&
+        exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --keyFile /tmp/mongo-keyfile
+    command: !reset []
