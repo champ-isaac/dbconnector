@@ -88,7 +88,7 @@ The `verify` job in `.github/workflows/ci.yml` runs `KEEP=1 .claude/skills/verif
 
 ## Not covered / not verified
 
-- The keyfile entrypoint was proved on Colima only. Its mount does not reproduce the Linux mode-644 refusal, so the first `ubuntu-latest` run of the `verify` job is the real proof of that fix. Update this line once a CI run has passed.
+- The keyfile entrypoint is now proven on `ubuntu-latest`: CI run 46068470642 passed the `verify` job with it. The Colima mount does not reproduce the Linux mode-644 refusal, so only the CI job exercises that path.
 
 - Only the `postgres:18.2` and `mongo:8.0.12` images of `docker-compose.yaml`, with the `wal_level=logical` change above. `docker/postgres.conf` and `pg_hba.conf` are used as is.
 - No TLS (`SslMode` is `disable`/`require` only, and `require` is not verified against a real certificate).
