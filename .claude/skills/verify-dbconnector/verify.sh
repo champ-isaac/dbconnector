@@ -88,7 +88,7 @@ cmd_doctor() {
 caller() { go run ./.claude/skills/verify-dbconnector/caller "$@"; }
 
 drive_unit() {
-  go test -race -count=1 -cover ./factory ./drivers/sql ./replication ./drivers/mongo >"$EV/unit.txt" 2>&1; record "unit tests" $?
+  go test -race -count=1 -cover ./factory ./drivers/sql ./replication ./drivers/mongo ./tests >"$EV/unit.txt" 2>&1; record "unit tests" $?
   go vet -tags integration ./... >>"$EV/unit.txt" 2>&1; record "go vet -tags integration" $?
 }
 

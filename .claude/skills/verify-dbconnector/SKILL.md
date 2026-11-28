@@ -27,7 +27,7 @@ Run it from anywhere; it `cd`s to the repo root. Exit 0 means everything passed.
 ## Real commands (from README.md and .github/workflows/ci.yml; no CLAUDE.md in the repo)
 
 - Go 1.26, module vendored locally (`vendor/` is gitignored, `go build` uses it when present).
-- Unit: `go test -race -cover ./factory ./drivers/sql ./replication ./drivers/mongo` (Mongo unit tests use an in-process fake server).
+- Unit: `go test -race -cover ./factory ./drivers/sql ./replication ./drivers/mongo ./tests` (Mongo unit tests use an in-process fake server).
 - Integration: `go test -race -count=1 -tags integration -run 'InPostgres|InMongo|^TestReplicationSlotCreateAndDrop$' -v ./tests`.
   Replication tests read `PG_HOST PG_PORT PG_DB PG_USER PG_PASSWORD` and **skip** (still green!) when `PG_HOST` is unset. `verify.sh` sets them and requires a `--- PASS:` line per test.
 - Everything else the tests need is hardcoded: `127.0.0.1:5432` / `:27017`, user `user`, password `user!@#`, database `data_privacy`.

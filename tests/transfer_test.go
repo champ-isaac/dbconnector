@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"math"
 	"testing"
@@ -201,6 +202,56 @@ func TestTransferBalanceInSql(t *testing.T) {
 	assert.NoError(t, err)
 	txMgr.AssertExpectations(t)
 	txStore.AssertExpectations(t)
+}
+
+// resultTx is a TxStore whose updates report fixed rows-affected counts as a sql.Result.
+// MockTxStore cannot do that: it returns a nil result for an update. The embedded TxStore is
+// nil, so any method not defined here would panic.
+type resultTx struct {
+	abstract.TxStore
+	rows       []int64 // rows affected by the 1st, 2nd, ... update
+	execs      int
+	committed  bool
+	rolledBack bool
+}
+
+func (r *resultTx) ExecWithSql(string, ...any) (any, error) {
+	n := r.rows[r.execs]
+	r.execs++
+	return driver.RowsAffected(n), nil
+}
+func (r *resultTx) Commit() error     { r.committed = true; return nil }
+func (r *resultTx) Rollback() error   { r.rolledBack = true; return nil }
+func (r *resultTx) Disconnect() error { return nil }
+
+// An update that matches no row (0 rows affected) fails the transfer with ErrAccountNotFound
+// and rolls it back. When the sender is missing, the receiver is never updated.
+func TestTransferBalanceInSql_UnknownAccountRollsBack(t *testing.T) {
+	cases := map[string]struct {
+		rows      []int64
+		wantExecs int
+		wantID    string
+	}{
+		"sender matches no row":   {rows: []int64{0, 1}, wantExecs: 1, wantID: "A"},
+		"receiver matches no row": {rows: []int64{1, 0}, wantExecs: 2, wantID: "B"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			tx := &resultTx{rows: tc.rows}
+			txMgr := new(MockTxManager)
+			txMgr.On("BeginTransaction", ctx).Return(tx, nil)
+
+			err := TransferBalanceInSql(txMgr, ctx, "A", "B", 5.0)
+
+			assert.ErrorIs(t, err, ErrAccountNotFound)
+			assert.ErrorContains(t, err, tc.wantID)
+			assert.Equal(t, tc.wantExecs, tx.execs)
+			assert.True(t, tx.rolledBack)
+			assert.False(t, tx.committed)
+			txMgr.AssertExpectations(t)
+		})
+	}
 }
 
 // The query side of the transfer reads one balance and writes nothing. A MockStore is
