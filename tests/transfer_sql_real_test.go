@@ -141,3 +141,15 @@ func TestTransferBalanceInSql_InPostgres_RejectsOverdraft(t *testing.T) {
 	assertSqlBalance(t, store, from, "20.00")
 	assertSqlBalance(t, store, to, "100.25")
 }
+
+// The sender and the receiver are the same account. The debit and the credit both match its
+// row and cancel out, so the transfer succeeds and the balance is unchanged.
+func TestTransferBalanceInSql_InPostgres_SameAccountKeepsBalance(t *testing.T) {
+	store, cmd := sqlTransferFixture(t)
+	id := seedSqlAccount(t, store, 200.5)
+
+	err := TransferBalanceInSql(cmd, context.Background(), id, id, 50.25)
+
+	require.NoError(t, err)
+	assertSqlBalance(t, store, id, "200.50")
+}
