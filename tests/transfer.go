@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"math"
@@ -46,15 +47,38 @@ func TransferBalanceInSql(mgr abstract.TransactionManager, ctx context.Context, 
 			panic(err)
 		}
 	}()
-	_, err = tx.ExecWithSql("update accounts set balance = balance - $1 where id = $2", amount, from)
+	err = updateBalance(tx, "update accounts set balance = balance - $1 where id = $2", amount, from)
 	if err != nil {
 		return rollback(tx, err)
 	}
-	_, err = tx.ExecWithSql("update accounts set balance = balance + $1 where id = $2", amount, to)
+	err = updateBalance(tx, "update accounts set balance = balance + $1 where id = $2", amount, to)
 	if err != nil {
 		return rollback(tx, err)
 	}
 	return tx.Commit()
+}
+
+// ErrAccountNotFound is returned by TransferBalanceInSql when the sender or the receiver
+// matches no row. The transaction is rolled back, so the other side is not changed either.
+var ErrAccountNotFound = errors.New("account not found")
+
+// updateBalance runs one balance update and fails when it matched no row. The check applies
+// when the store returns a sql.Result, which the SQL driver always does for an update.
+func updateBalance(tx abstract.TxStore, query string, amount float64, id string) error {
+	res, err := tx.ExecWithSql(query, amount, id)
+	if err != nil {
+		return err
+	}
+	if r, ok := res.(sql.Result); ok {
+		n, err := r.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("%w: %s", ErrAccountNotFound, id)
+		}
+	}
+	return nil
 }
 
 // TransferBalanceInMongo simulate transfer balance process in mongo database. It is the
